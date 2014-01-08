@@ -1,0 +1,6 @@
+nimcache
+.nimcache
+example/conf/run
+example/conf/logs
+example/conf/tmp
+example/nawak_app
