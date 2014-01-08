@@ -6,10 +6,13 @@ It is only compatible with the `Mongrel2` server for now.
 ## Minimal example
 ```nimrod
 # helloworld.nim
-import nawak_mongrel
+import nawak_mongrel, strutils
 
 get "/":
     return response("Hello World!")
+
+get "/user/@username/":
+    return response("Hello $1!" % url_params.username)
 
 run()
 ```
@@ -29,7 +32,7 @@ Please check that you don't use the stable compiler version of `Nimrod`. *nawak*
 You can now compile and execute the examples from the `example` folder:
 
     $ cd example
-    $ nimrod c helloworld.nim
+    $ nimrod c -d:release helloworld.nim
     $ ./helloworld
     $ firefox http://localhost:6767/
 
