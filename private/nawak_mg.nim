@@ -1,4 +1,6 @@
 import macros, tables, strtabs, parseutils
+from strutils import `%`
+from xmltree import escape
 import jesterpatterns
 import tuple_index_setter
 
@@ -61,6 +63,13 @@ proc response*(code: THttpCode, body: string, headers: PStringTable): TResponse 
 
 proc response*(body: string, headers: PStringTable): TResponse =
     return (200, headers, body)
+
+proc redirect*(path: string, code = 303): TResponse =
+    let path = escape(path)
+    result.code = code
+    result.headers = {:}.newStringTable
+    result.headers["Location"] = path
+    result.body = "Redirecting to <a href=\"$1\">$1</a>." % [path]
 
 proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
               path: string) =
