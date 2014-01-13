@@ -2,6 +2,7 @@
 # http://nimrod-lang.org/talk01/slides.html
 # http://nimrod-lang.org/talk01/corrections.html
 
+import strutils
 import macros
 
 proc invalidFormatString() {.noinline.} =
@@ -11,7 +12,6 @@ template optAdd1*{x = y; add(x, z)}(x, y, z: string) =
   x = y & z
 
 template optAdd2*{add(x, y); add(x, z)}(x, y, z: string) =
-  #x.add(y & z)
   add(x, y & z)
 
 macro optFormat*{`%`(f, a)}(f: string{lit}, a: openArray[string]): expr =
@@ -33,13 +33,4 @@ macro optFormat*{`%`(f, a)}(f: string{lit}, a: openArray[string]): expr =
       result.add(newLit(f[i])); i += 1
   
   result = nestList(!"&", result)
-
-when isMainModule:
-    import strutils, times
-    type str {.shallow.} = string
-    var bla: str = "somebla"
-    var t0 = cpuTime()
-    for i in 0..1_000_000:
-        #var s: str = `%`("$1 $2:$3 $4,", ["stuff", "yeah", bla, $12345])
-        var s: str = optFormat("$1 $2:$3 $4,", ["stuff", "yeah", bla, $12345])
-    echo "CPU time [s] ", cpuTime() - t0
+  #echo toStrLit(result)
