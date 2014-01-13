@@ -1,4 +1,4 @@
-import os, strutils, strtabs, json
+import os, tables, strutils, strtabs, json
 import lib/zmq4, lib/uuid
 import private/optim_strange_loop,
        private/netstrings,
@@ -106,29 +106,30 @@ proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
             send(req.uuid, req.id, "")  # disconnect
 
         if not has_matched:
-            var headers = newStringTable({:})
-            deliver(req.uuid, req.id,
-                    http_response("I deny any responsibility in this 404.",
-                                  404, "Not Found", headers))
-        else:
-            if resp.headers == nil:
-                resp.headers = {:}.newStringTable
-            if resp.body == nil or resp.code == 0:
-                resp.body = "Error 500"
-                resp.code = 500
+            resp = nawak.custom_pages[404]("""
+            <i>&quot;And they took the road less traveled.
+            Unfortunately, there was nothing there.&quot;</i>
+            """)
 
-            deliver(req.uuid, req.id, http_response(
-                resp.body, resp.code, "OK", resp.headers
-            ))
+        if resp.headers == nil:
+            resp.headers = {:}.newStringTable
+        if resp.body == nil or resp.code == 0:
+            resp = nawak.custom_pages[500]("""
+            The programmer forgot to add a status code or to return some data
+            in the body of the response.""")
 
-            #deliver(req.uuid, req.id, optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4",
-            #    [$resp.code, "OK",
-            #    "Content-Type: application/json\r\nContent-Length: " & $(resp.body.len),
-            #    resp.body]))
+        deliver(req.uuid, req.id, http_response(
+            resp.body, resp.code, "OK", resp.headers
+        ))
 
-            #deliver_shortcut(req.uuid, req.id,
-            #    "Content-Type: application/json\r\nContent-Length: " & $resp.body.len,
-            #    resp.body, "OK", resp.code)
+        #deliver(req.uuid, req.id, optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4",
+        #    [$resp.code, "OK",
+        #    "Content-Type: application/json\r\nContent-Length: " & $(resp.body.len),
+        #    resp.body]))
+
+        #deliver_shortcut(req.uuid, req.id,
+        #    "Content-Type: application/json\r\nContent-Length: " & $resp.body.len,
+        #    resp.body, "OK", resp.code)
 
 
 when isMainModule:

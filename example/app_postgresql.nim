@@ -95,5 +95,9 @@ get "/updates":
 
     return response(jdump(world), "application/json")
 
+custom_page 404:
+    # customize the content of the 404 page
+    return response(404, """Nah, I've got nothing.<br>
+                            Here's a <b>404 Page Not Found</b> error for you.""")
 
 run()

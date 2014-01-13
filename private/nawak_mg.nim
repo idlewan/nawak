@@ -1,4 +1,4 @@
-import macros, strtabs, parseutils
+import macros, tables, strtabs, parseutils
 import jesterpatterns
 import tuple_index_setter
 
@@ -17,15 +17,32 @@ type
     TMatcher = proc(s: string, request: TRequest):
         tuple[matched: bool, response: TResponse]
     TCallback = proc(request: TRequest): TResponse
+    TSpecialPageCallback* = proc(msg: string): TResponse
     THttpMethod = enum
         TGET = "GET", TPOST = "POST"
     TNawak = tuple[gets: seq[tuple[match: TMatcher, path: string]],
-                     posts: seq[tuple[match: TMatcher, path: string]] ]
+                   posts: seq[tuple[match: TMatcher, path: string]],
+                   custom_pages: TTable[int, TSpecialPageCallback] ]
 
 var nawak*: TNawak
 nawak.gets = @[]
 nawak.posts = @[]
 
+nawak.custom_pages = initTable[int, TSpecialPageCallback]()
+nawak.custom_pages[404] = proc(msg: string): TResponse =
+    return (404, {:}.newStringTable, "The server says: <b>404 not found.</b><br><br>" & msg)
+
+nawak.custom_pages[500] = proc(msg: string): TResponse =
+    return (500, {:}.newStringTable, "The server says: 500 internal error.<br><br>" & msg)
+
+proc register_custom_page(code: THttpCode, callback: TSpecialPageCallback) =
+    nawak.custom_pages[code] = callback
+
+template custom_page*(code: int, body: stmt): stmt {.immediate.} =
+    bind register_custom_page
+    register_custom_page(code, proc(msg: string): TResponse =
+        body
+    )
 
 proc response*(body: string): TResponse =
     #result.code = 200
@@ -44,7 +61,6 @@ proc response*(code: THttpCode, body: string, headers: PStringTable): TResponse 
 
 proc response*(body: string, headers: PStringTable): TResponse =
     return (200, headers, body)
-
 
 proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
               path: string) =
