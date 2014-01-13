@@ -23,12 +23,12 @@ proc http_response(body:string, code: int, status: string,
         #headers_strs.add("$1: $2" % [k, $v])
         headers_strs.add(optFormat("$1: $2", [k, $v]))
 
-    #return HTTP_FORMAT % [$code, status, headers_strs.join("\r\n"), body]
-    return optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4", [$code, status, headers_strs.join("\r\n"), body])
+    return HTTP_FORMAT % [$code, status, headers_strs.join("\r\n"), body]
+    #return optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4", [$code, status, headers_strs.join("\r\n"), body])
 
 proc send*(uuid, conn_id, msg: string) =
-    #let payload = "$1 $2:$3, $4" % [uuid, $conn_id.len, conn_id, msg]
-    let payload = optFormat("$1 $2:$3, $4", [uuid, $conn_id.len, conn_id, msg])
+    let payload = "$1 $2:$3, $4" % [uuid, $conn_id.len, conn_id, msg]
+    #let payload = optFormat("$1 $2:$3, $4", [uuid, $conn_id.len, conn_id, msg])
     zmq4.send(to_mongrel, payload)
 
 #proc deliver(uuid: string, idents: openArray[string], data: string) =
@@ -37,12 +37,26 @@ proc send*(uuid, conn_id, msg: string) =
 proc deliver(uuid, conn_id, data: string) =
     send(uuid, conn_id, data)
 
-proc deliver_shortcut(uuid, conn_id, headers, body, status_msg: string,
-                   status_code: int) =
-    let payload = optFormat("$1 $2:$3, HTTP/1.1 $4 $5\r\n$6\r\n\r\n$7",
-                            [uuid, $conn_id.len, conn_id,
-                             $status_code, status_msg, headers, body])
-    zmq4.send(to_mongrel, payload)
+
+proc prepare_request_obj(req: TMongrelMsg): TRequest =
+    result.path = req.headers["PATH"].str
+    result.query = {:}.newStringTable
+    if req.headers.hasKey("QUERY"):
+        parseUrlQuery(req.headers["QUERY"].str, result.query)
+
+template try_match(): stmt {.immediate.} =
+    try:
+        let (matched, res) = it.match(request.path, request)
+        if matched:
+            has_matched = matched
+            resp = res
+            break
+    except:
+        let
+            e = getCurrentException()
+            msg = getCurrentExceptionMsg()
+        resp = nawak.custom_pages[500](repr(e) & "<br>" & msg)
+        break
 
 proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
     var my_uuid: Tuuid
@@ -74,33 +88,15 @@ proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
                 continue
 
         of "GET":
-            var request: TRequest
-            request.path = req.headers["PATH"].str
-            request.query = {:}.newStringTable
-            if req.headers.hasKey("QUERY"):
-                parseUrlQuery(req.headers["QUERY"].str, request.query)
-
-            for g in nawak.gets:
-                let (matched, res) = g.match(request.path, request)
-                #echo "\t", g.path, " :  ", matched
-                if matched:
-                    has_matched = matched
-                    resp = res
-                    break
+            let request = prepare_request_obj(req)
+            for it in nawak.gets:
+                try_match()
 
         of "POST":
-            var request: TRequest
-            request.path = req.headers["PATH"].str
-            request.query = {:}.newStringTable
-            if req.headers.hasKey("QUERY"):
-                parseUrlQuery(req.headers["QUERY"].str, request.query)
-            #let request: TRequest = (req.headers["PATH"].str, "sdf")
-            for p in nawak.posts:
-                let (matched, res) = p.match(request.path, request)
-                if matched:
-                    has_matched = matched
-                    resp = res
-                    break
+            let request = prepare_request_obj(req)
+            for it in nawak.posts:
+                try_match()
+
         else:
             echo "METHOD NOT AVAILABLE"
             send(req.uuid, req.id, "")  # disconnect
@@ -122,17 +118,5 @@ proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
             resp.body, resp.code, "OK", resp.headers
         ))
 
-        #deliver(req.uuid, req.id, optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4",
-        #    [$resp.code, "OK",
-        #    "Content-Type: application/json\r\nContent-Length: " & $(resp.body.len),
-        #    resp.body]))
-
-        #deliver_shortcut(req.uuid, req.id,
-        #    "Content-Type: application/json\r\nContent-Length: " & $resp.body.len,
-        #    resp.body, "OK", resp.code)
-
-
-when isMainModule:
-    #var headers = newStringTable({"Content-Type": "text/plain"})
-    #echo http_response("Hello", 200, "OK", headers)
-    run()
+proc run*(from_addr, to_addr: int) =
+    run("tcp://localhost:" & $from_addr, "tcp://localhost:" & $to_addr)

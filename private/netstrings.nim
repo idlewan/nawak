@@ -1,7 +1,7 @@
 import strutils, json
 
 type
-    TMongrelMsg = tuple[uuid: string, id: string, path: string,
+    TMongrelMsg* = tuple[uuid: string, id: string, path: string,
                         headers: PJsonNode, body: string]
 
 proc parse_netstring(ns: string, split_idx: var int): string =
