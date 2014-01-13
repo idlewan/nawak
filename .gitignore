@@ -5,4 +5,5 @@ example/conf/logs
 example/conf/tmp
 example/conf/config.sqlite
 example/helloworld
-example/nawak_app
+example/app_postgresql
+example/app_redis

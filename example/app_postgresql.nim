@@ -1,5 +1,6 @@
 import strtabs, strutils, math, algorithm
 import nawak_mongrel, jdump
+import model, fortunes_tmpl
 
 # The following import belongs to the stdlib, but has been updated to support
 # queries with parameters (that are safer to counter SQL injections) and
@@ -7,17 +8,12 @@ import nawak_mongrel, jdump
 # It will be merged eventually. For now, I included it in the repository.
 import lib/db_postgres_redone
 
-type THello = tuple[message: string]
-type TWorld = tuple[id: int, randomNumber: int]
-type TFortune* = tuple[id: int, message: string]
-
 proc unrowTWorld(x: TRow): TWorld =
     result.id = parseInt(x[0])
     result.randomNumber = parseInt(x[1])
 proc unrowTFortune(x: TRow): TFortune =
     return (x[0].parseInt, x[1])
 
-import fortunes_tmpl  # Needs TFortune to be defined first
 
 var db = open("", "benchmarkdbuser", "benchmarkdbpass", "host=localhost port=5432 dbname=hello_world")
 
@@ -34,7 +30,7 @@ let qupdates_prepared = db.prepare("updates", qupdates, 2)
 get "/json":
     var j: THello
     j.message = "Hello, World!"
-    # jdump serialize any tuple as json
+    # jdump serialize the tuples of the model as json
     return response(jdump(j), "application/json")
 
 get "/plaintext":
