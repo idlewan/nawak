@@ -55,7 +55,9 @@ template try_match(): stmt {.immediate.} =
         let
             e = getCurrentException()
             msg = getCurrentExceptionMsg()
-        resp = nawak.custom_pages[500](repr(e) & "<br>" & msg)
+            stacktrace = getStackTrace(e)
+        has_matched = true
+        resp = nawak.custom_pages[500](msg & "\L" & stacktrace)
         break
 
 proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =

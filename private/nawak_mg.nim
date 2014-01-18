@@ -1,5 +1,5 @@
 import macros, tables, strtabs, parseutils
-from strutils import `%`
+from strutils import `%`, replace
 from xmltree import escape
 import jesterpatterns
 import tuple_index_setter
@@ -32,10 +32,14 @@ nawak.posts = @[]
 
 nawak.custom_pages = initTable[int, TSpecialPageCallback]()
 nawak.custom_pages[404] = proc(msg: string): TResponse =
-    return (404, {:}.newStringTable, "The server says: <b>404 not found.</b><br><br>" & msg)
+    return (404, {:}.newStringTable,
+            "The server says: <b>404 not found.</b><br><br>" & msg)
 
 nawak.custom_pages[500] = proc(msg: string): TResponse =
-    return (500, {:}.newStringTable, "The server says: 500 internal error.<br><br>" & msg)
+    echo msg
+    let msg_html = msg.replace("\n", "<br>\L")
+    return (500, {:}.newStringTable,
+            "The server says: <b>500 internal error.</b><br><br>" & msg_html)
 
 proc register_custom_page(code: THttpCode, callback: TSpecialPageCallback) =
     nawak.custom_pages[code] = callback
