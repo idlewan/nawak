@@ -1,10 +1,11 @@
-import os, tables, strutils, strtabs, json
+import os, tables, strutils, strtabs, json, cookies
 import lib/zmq4, lib/uuid
 import private/optim_strange_loop,
        private/netstrings,
        private/nawak_mg,
+       private/nawak_common,
        private/jesterutils
-export nawak_mg
+export nawak_mg, nawak_common
 
 
 const HTTP_FORMAT = "HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4"
@@ -43,6 +44,10 @@ proc prepare_request_obj(req: TMongrelMsg): TRequest =
     result.query = {:}.newStringTable
     if req.headers.hasKey("QUERY"):
         parseUrlQuery(req.headers["QUERY"].str, result.query)
+    if req.headers.hasKey("cookie"):
+        result.cookies = parseCookies(req.headers["cookie"].str)
+    else:
+        result.cookies = {:}.newStringTable
 
 template try_match(): stmt {.immediate.} =
     try:

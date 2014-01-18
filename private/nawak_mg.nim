@@ -12,7 +12,7 @@ import tuple_index_setter
 
 type
     THttpCode* = int
-    TRequest* = tuple[path: string, query: PStringTable]
+    TRequest* = tuple[path: string, query: PStringTable, cookies: PStringTable]
     TResponse* = tuple[code: THttpCode,
                       headers: PStringTable,
                       body: string]
