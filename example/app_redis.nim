@@ -49,7 +49,7 @@ get "/queries":
 
 get "/fortunes":
     var fortunes = getAllFortunes()
-    let new_fortune: TFortune = (id: fortunes.len + 1,
+    let new_fortune: TFortune = (id: 0,
                                  message: "Additional fortune added at request time.")
     fortunes.add new_fortune
     sort(fortunes, proc(x, y: TFortune): int =
