@@ -1,0 +1,50 @@
+@font-face {
+  font-family: 'Amatic SC';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Amatic SC Regular'), local('AmaticSC-Regular'), url('fonts/amatic_sc.woff') format('woff'), url('fonts/amatic_sc.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Lato Regular'), local('Lato-Regular'), url('fonts/lato.woff') format('woff'), url('fonts/lato.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Raleway';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Raleway'), url('fonts/raleway.woff') format('woff'), url('fonts/raleway.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Raleway';
+  font-style: normal;
+  font-weight: 800;
+  src: local('Raleway ExtraBold'), local('Raleway-ExtraBold'), url('fonts/raleway_extrabold.woff') format('woff'), url('fonts/raleway_extrabold.ttf') format('truetype');
+}
+
+header {
+    width: 600px;
+    margin: auto;
+    margin-top: 100px;
+    margin-bottom: 200px;
+    text-align: right;
+}
+.left {
+    float: left;
+    margin-top: 60px;
+    text-align: right;
+}
+header h1 {
+    margin: 0;
+    font-size: 62px;
+    font-weight: normal;
+    font-family: 'Amatic SC', serif;
+}
+header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: normal;
+    font-family: "Raleway";
+    color: #999;
+}
