@@ -1,4 +1,5 @@
 import os, tables, strutils, strtabs, json, cookies
+import posix
 import lib/zmq4, lib/uuid
 import private/optim_strange_loop,
        private/netstrings,
@@ -10,7 +11,31 @@ export nawak_mg, nawak_common
 
 const HTTP_FORMAT = "HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4"
 
-var from_mongrel, to_mongrel: TConnection
+var context: PContext
+
+
+var interrupted {.global.} = false
+proc signal_handler(signal_value: cint) {.noconv.} =
+    interrupted = true
+    echo "Interruption captured, force quit in 2 seconds"
+    sleep(2000)
+    if ctx_term(context) != 0:
+        zmqError()
+
+# register interrupt callbacks
+var action: TSigAction
+var nilaction: TSigAction
+action.sa_handler = signal_handler
+action.sa_flags = 0
+discard sigemptyset(action.sa_mask)
+discard sigaction(SIGINT, action, action)
+discard sigaction(SIGTERM, action, action)
+
+
+proc linger(to_mongrel: PSocket) =
+    var linger = 1500
+    discard setsockopt(to_mongrel, ZMQ_LINGER, addr linger, sizeof(linger).uint)
+
 
 proc http_response(body:string, code: int, status: string,
                    headers: var PStringTable): string =
@@ -27,7 +52,7 @@ proc http_response(body:string, code: int, status: string,
     return HTTP_FORMAT % [$code, status, headers_strs.join("\r\n"), body]
     #return optFormat("HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4", [$code, status, headers_strs.join("\r\n"), body])
 
-proc send*(uuid, conn_id, msg: string) =
+proc send*(to_mongrel: TConnection, uuid, conn_id, msg: string) =
     let payload = "$1 $2:$3, $4" % [uuid, $conn_id.len, conn_id, msg]
     #let payload = optFormat("$1 $2:$3, $4", [uuid, $conn_id.len, conn_id, msg])
     zmq4.send(to_mongrel, payload)
@@ -35,8 +60,8 @@ proc send*(uuid, conn_id, msg: string) =
 #proc deliver(uuid: string, idents: openArray[string], data: string) =
 #    send(uuid, idents.join(" "), data)
 
-proc deliver(uuid, conn_id, data: string) =
-    send(uuid, conn_id, data)
+proc deliver(to_mongrel: TConnection, uuid, conn_id, data: string) =
+    send(to_mongrel, uuid, conn_id, data)
 
 
 proc prepare_request_obj(req: TMongrelMsg): TRequest =
@@ -65,21 +90,28 @@ template try_match(): stmt {.immediate.} =
         resp = nawak.custom_pages[500](msg & "\L" & stacktrace)
         break
 
-proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
+
+proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.} =
     var my_uuid: Tuuid
     uuid_generate_random(my_uuid)
     let sender_uuid = my_uuid.to_hex
-    echo "I am: ", sender_uuid
+    #echo "I am: ", sender_uuid
 
-    from_mongrel = connect(from_addr, PULL)
-    to_mongrel = connect(to_addr, PUB)
+    var from_mongrel = connect(arg.from_addr, PULL, context)
+    var to_mongrel = connect(arg.to_addr, PUB, context)
     discard setsockopt(to_mongrel.s, ZMQ_IDENTITY, cstring(sender_uuid),
                        uint(sender_uuid.len))
 
+    arg.init()
 
-    while True:
+    while not interrupted:
         #echo ""
-        var msg = receive(from_mongrel)
+        var msg: string
+        try:
+            msg = receive(from_mongrel)
+        except EZmq:
+            linger(to_mongrel.s)
+            break
 
         var req = parse(msg)
         #echo req.headers["PATH"].str
@@ -106,7 +138,7 @@ proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
 
         else:
             echo "METHOD NOT AVAILABLE"
-            send(req.uuid, req.id, "")  # disconnect
+            to_mongrel.send(req.uuid, req.id, "")  # disconnect
 
         if not has_matched:
             resp = nawak.custom_pages[404]("""
@@ -121,9 +153,55 @@ proc run*(from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998") =
             The programmer forgot to add a status code or to return some data
             in the body of the response.""")
 
-        deliver(req.uuid, req.id, http_response(
-            resp.body, resp.code, "OK", resp.headers
-        ))
+        if interrupted:
+            linger(to_mongrel.s)
 
-proc run*(from_addr, to_addr: int) =
-    run("tcp://localhost:" & $from_addr, "tcp://localhost:" & $to_addr)
+        try:
+            to_mongrel.send(req.uuid, req.id, http_response(
+                resp.body, resp.code, "OK", resp.headers
+            ))
+        except EZmq:
+            linger(to_mongrel.s)
+            break
+
+    var thread_id = cast[int](myThreadId[type(arg)]())
+    #echo "Quit thread $#" % $thread_id
+
+    let status_from = close(from_mongrel.s)
+    let status_to = close(to_mongrel.s)
+    if  status_from != 0 or status_to != 0:
+        zmqError()
+
+proc run*(init: proc(), from_addr="tcp://localhost:9999", to_addr="tcp://localhost:9998", nb_threads=32) =
+    context = ctx_new()
+    if context == nil:
+        zmqError()
+    
+    ## the following only executes (number of cpu cores) threads at a time maximum
+    #let nb_cpu = 4
+    #for i in 0 .. nb_cpu:
+    #    spawn run_thread(from_addr, to_addr)
+    #system.sync()
+
+    var thr: seq[TThread[tuple[init: proc();
+                               from_addr, to_addr: string]]]
+    thr.newSeq(nb_threads)
+
+    for i in 0 .. nb_threads:
+        createThread(thr[i], run_thread, (init, from_addr, to_addr))
+    echo "Started with $# threads" % $nb_threads
+
+    joinThreads(thr)
+
+    #if ctx_term(context) != 0:
+    #    zmqError()
+
+proc run*(init: proc(), from_addr, to_addr: int, nb_threads=32) =
+    run(init, "tcp://localhost:" & $from_addr, "tcp://localhost:" & $to_addr, nb_threads)
+
+proc empty_init() =
+    discard
+
+proc run*(from_addr, to_addr: int, nb_threads=32) =
+    run(empty_init, from_addr, to_addr, nb_threads)
+

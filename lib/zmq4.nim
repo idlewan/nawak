@@ -413,6 +413,16 @@ proc zmqError*() {.noinline, noreturn.} =
   e.msg = $strerror(errno())
   raise e
 
+proc connect*(address: string, mode: TSocketType = REQ, context: PContext): TConnection =
+    result.c = context
+
+    result.s = socket(result.c, cint(mode))
+    if result.s == nil:
+        zmqError()
+
+    if connect(result.s, address) != 0:
+        zmqError()
+
 
 proc connect*(address: string, mode: TSocketType = REQ): TConnection =
     result.c = ctx_new()
@@ -442,7 +452,7 @@ proc close*(c: TConnection) =
     ## closes the connection.
     if close(c.s) != 0:
         zmqError()
-    if ctx_destroy(c.c) != 0:
+    if ctx_term(c.c) != 0:
         zmqError()
 
 

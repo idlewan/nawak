@@ -15,16 +15,21 @@ proc unrowTFortune(x: TRow): TFortune =
     return (x[0].parseInt, x[1])
 
 
-var db = open("", "benchmarkdbuser", "benchmarkdbpass", "host=localhost port=5432 dbname=hello_world")
+var db {.threadvar.}: TDbConn
+var qworld_prepared {.threadvar.}: TPreparedId
+var qfortunes_prepared {.threadvar.}: TPreparedId
+var qupdates_prepared {.threadvar.}: TPreparedId
 
 const qworld = "SELECT id, randomNumber FROM World WHERE id = $1"
 const qfortunes = "SELECT id, message FROM Fortune"
 const qupdates = "UPDATE World SET randomNumber = $1 WHERE id = $2"
 
-# prepare queries
-let qworld_prepared = db.prepare("world", qworld, 1)
-let qfortunes_prepared = db.prepare("fortunes", qfortunes, 0)
-let qupdates_prepared = db.prepare("updates", qupdates, 2)
+proc init() =
+    db = open("", "benchmarkdbuser", "benchmarkdbpass", "host=localhost port=5432 dbname=hello_world")
+    # prepare queries
+    qworld_prepared = db.prepare("world", qworld, 1)
+    qfortunes_prepared = db.prepare("fortunes", qfortunes, 0)
+    qupdates_prepared = db.prepare("updates", qupdates, 2)
 
 
 get "/json":
@@ -100,4 +105,4 @@ custom_page 404:
     return response(404, """Nah, I've got nothing.<br>
                             Here's a <b>404 Page Not Found</b> error for you.""")
 
-run()
+run(init=init, nb_threads=64)
