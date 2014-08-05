@@ -75,8 +75,7 @@ proc redirect*(path: string, code = 303): TResponse =
     result.headers["Location"] = path
     result.body = "Redirecting to <a href=\"$1\">$1</a>." % [path]
 
-proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
-              path: string) =
+proc register(http_method: THttpMethod, matcher: TMatcher, path: string) =
     case http_method
     of TGET:
         nawak.gets.add((matcher, path))
@@ -86,8 +85,8 @@ proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
     # debug purposes:
     echo "registered: ", http_method, " ", path
 
-template inject_matcher(path: string) {.dirty.} =  # if not dirty,
-                                                   # macros inside don't compile
+template inject_matcher(path: string, callback: TCallback) {.dirty.} =
+    # if not dirty, macros inside don't compile
     ## injects the proc ``match`` in the current scope.
     ## The variables ``pattern``, ``callback`` and ``url_params`` are closed over,
     ## and are supposed to be declared before this template is called.
@@ -193,14 +192,13 @@ template register_route(http_method: THttpMethod, path: string,
         var pattern = parsePattern(path)
         inject_urlparams_tuple(path)
 
-        proc callback(request: TRequest): TResponse {.closure.} =
+        proc callback(request: TRequest): TResponse =
+            ## The ``url_params`` tuple is closed over
+            ## and accessible in the body
             body
 
-        inject_matcher(path)
-        register(http_method, match, callback, path)
-        ## passing ``callback`` to register is necessary for closure detection
-        ## by the compiler, even if inject_matcher injects a match that will
-        ## start callback anyway because it can access it thanks to the closure
+        inject_matcher(path, callback)
+        register(http_method, match, path)
 
 template get*(path: string, body: stmt): stmt {.immediate, dirty.} =
     bind register_route, TGET
