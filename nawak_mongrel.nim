@@ -202,6 +202,6 @@ proc run*(init: proc(), from_addr, to_addr: int, nb_threads=32) =
 proc empty_init() =
     discard
 
-proc run*(from_addr, to_addr: int, nb_threads=32) =
+proc run*(from_addr = 9999, to_addr = 9998, nb_threads=32) =
     run(empty_init, from_addr, to_addr, nb_threads)
 
