@@ -1,9 +1,11 @@
 [Package]
 name        = "nawak"
-version     = "0.2.0"
+version     = "0.3.0"
 author      = "Erwan Ameil"
 description = "A web micro-framework in Nimrod, heavily inspired by jester, flask and the like."
 license     = "MIT"
 
 [Deps]
-Requires: "nimrod >= 0.9.3"
+Requires: "nimrod >= 0.9.6"
+Requires: "uuid >= 0.1.0"
+Requires: "zmq >= 0.2.1"

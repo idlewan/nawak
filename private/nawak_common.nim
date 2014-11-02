@@ -1,8 +1,8 @@
 import strtabs, times
-import ../lib/cookies
+import cookies
 
-proc addCookie*(headers: var PStringTable, key, value: string;
-                expires: TTimeInfo, domain = "", path = "",
+proc addCookie*(headers: var StringTableRef, key, value: string;
+                expires: TimeInfo, domain = "", path = "",
                 secure = false, httpOnly = false) =
     if headers.hasKey("Set-Cookie"):
         headers.mget("Set-Cookie").add "\c\L" & setCookie(key, value,
@@ -11,7 +11,7 @@ proc addCookie*(headers: var PStringTable, key, value: string;
         headers["Set-Cookie"] = setCookie(key, value, expires, domain, path,
                                                   noName=true, secure, httpOnly)
 
-proc addCookie*(headers: var PStringTable; key, value: string; domain="",
+proc addCookie*(headers: var StringTableRef; key, value: string; domain="",
                 path="", secure=false, httpOnly=false) =
     if headers.hasKey("Set-Cookie"):
         headers.mget("Set-Cookie").add "\c\L" &
@@ -21,10 +21,10 @@ proc addCookie*(headers: var PStringTable; key, value: string; domain="",
         headers["Set-Cookie"] = setCookie(key, value, domain=domain,
             path=path, noName=true, secure=secure, httpOnly=httpOnly)
 
-proc deleteCookie*(headers: var PStringTable, key: string, domain="", path="",
+proc deleteCookie*(headers: var StringTableRef, key: string, domain="", path="",
                    secure=false, httpOnly=false) =
-    var tim = TTime(0).getGMTime()
+    var tim = Time(0).getGMTime()
     addCookie(headers, key, "deleted", expires=tim, domain, path, secure, httpOnly)
 
-proc daysFromNow*(days: int): TTimeInfo =
-    return TTime(int(getTime()) + days * (60*60*24)).getGMTime()
+proc daysFromNow*(days: int): TimeInfo =
+    return Time(int(getTime()) + days * (60*60*24)).getGMTime()

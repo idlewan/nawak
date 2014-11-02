@@ -18,7 +18,7 @@ run()
 ```
 
 ## Installation
-Install `Mongrel2` by following the instructions in the [manual](http://mongrel2.org/manual/book-finalch3.html). The bindings for `ZeroMQ` may only work with `ZeroMQ` version 4.
+Install `Mongrel2` v1.8.1 (`download page <http://mongrel2.org/downloads/>`_) by following the instructions in the [manual](http://mongrel2.org/manual/book-finalch3.html). The bindings for `ZeroMQ` may only work with `ZeroMQ` version 4.
 
 Start `Mongrel2` either with the provided Makefile in the `example/conf/` folder, or manually:
 
@@ -27,7 +27,7 @@ Start `Mongrel2` either with the provided Makefile in the `example/conf/` folder
     $ m2sh load
     $ sudo m2sh start -every
 
-Please check that you don't use the stable compiler version of `Nimrod`. *nawak* only works with a fresh Nimrod compiler. The `0.9.2` stable version is not enough, you have to go all `git clone https://github.com/Araq/Nimrod.git` on it.
+Please check that you use a recent compiler version of `Nimrod`/`Nim`. *nawak* only works with a fresh Nimrod compiler.
 
 You can now compile and execute the examples from the `example` folder:
 

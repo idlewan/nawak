@@ -6,7 +6,7 @@ import strutils
 import macros
 
 proc invalidFormatString() {.noinline.} =
-    raise newException(EInvalidValue, "invalid format string")
+    raise newException(ValueError, "invalid format string")
 
 template optAdd1*{x = y; add(x, z)}(x, y, z: string) =
   x = y & z

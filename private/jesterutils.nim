@@ -2,9 +2,9 @@
 # with modifications by Erwan Ameil
 # MIT License
 import parseutils, strtabs
-from cgi import urlDecode
+from cgi import decodeUrl
 
-proc parseUrlQuery*(query: string, query_params: var PStringTable) =
+proc parseUrlQuery*(query: string, query_params: var StringTableRef) =
     query_params = {:}.newStringTable
     try:
         var i = 0
@@ -16,12 +16,12 @@ proc parseUrlQuery*(query: string, query_params: var PStringTable) =
             var val = ""
             i += query.parseUntil(key, '=', i)
             if query[i] != '=':
-                raise newException(EInvalidValue, "Expected '=' at " & $i)
+                raise newException(ValueError, "Expected '=' at " & $i)
             inc(i) # Skip =
             i += query.parseUntil(val, '&', i)
             inc(i) # Skip &
-            query_params[urlDecode(key)] = urlDecode(val)
-    except EInvalidValue: discard
+            query_params[decodeUrl(key)] = decodeUrl(val)
+    except ValueError: discard
 
 
 when isMainModule:

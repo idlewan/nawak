@@ -1,5 +1,5 @@
 import strtabs, times
-import nawak_mongrel, ../lib/cookies
+import nawak_mongrel, cookies
 
 
 get "/mmm_cookies":

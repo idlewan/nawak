@@ -1,17 +1,15 @@
-import os, tables, strutils, strtabs, json, cookies
-import posix
-import lib/zmq4, lib/uuid
-import private/optim_strange_loop,
-       private/netstrings,
-       private/nawak_mg,
-       private/nawak_common,
-       private/jesterutils
-export nawak_mg, nawak_common
+import os, posix, tables, strutils, strtabs, json, cookies
+import zmq, uuid
+import private/optim_strange_loop, private/netstrings, private/jesterutils
+import private/nawak_mg as n_mg,
+       private/nawak_common as n_cm
+export n_mg.get, n_mg.post, n_mg.response, n_mg.redirect, n_mg.custom_page
+export n_cm.addCookie, n_cm.deleteCookie, n_cm.daysFromNow
 
 
 const HTTP_FORMAT = "HTTP/1.1 $1 $2\r\n$3\r\n\r\n$4"
 
-var context: PContext
+var context {.global.} : PContext
 
 
 var interrupted {.global.} = false
@@ -32,13 +30,13 @@ discard sigaction(SIGINT, action, action)
 discard sigaction(SIGTERM, action, action)
 
 
-proc linger(to_mongrel: PSocket) =
-    var linger = 1500
-    discard setsockopt(to_mongrel, ZMQ_LINGER, addr linger, sizeof(linger).uint)
+proc set_linger(to_mongrel: PSocket) =
+    var delay = 1500
+    discard setsockopt(to_mongrel, LINGER, addr delay, sizeof(delay))
 
 
 proc http_response(body:string, code: int, status: string,
-                   headers: var PStringTable): string =
+                   headers: var StringTableRef): string =
     ## formats the http part of the response payload to send on the zeromq socket
     headers["Content-Length"] = $len(body)
     if not headers.hasKey("Content-Type"):
@@ -55,7 +53,7 @@ proc http_response(body:string, code: int, status: string,
 proc send*(to_mongrel: TConnection, uuid, conn_id, msg: string) =
     let payload = "$1 $2:$3, $4" % [uuid, $conn_id.len, conn_id, msg]
     #let payload = optFormat("$1 $2:$3, $4", [uuid, $conn_id.len, conn_id, msg])
-    zmq4.send(to_mongrel, payload)
+    zmq.send(to_mongrel, payload)
 
 #proc deliver(uuid: string, idents: openArray[string], data: string) =
 #    send(uuid, idents.join(" "), data)
@@ -87,11 +85,15 @@ template try_match(): stmt {.immediate.} =
             msg = getCurrentExceptionMsg()
             stacktrace = getStackTrace(e)
         has_matched = true
-        resp = nawak.custom_pages[500](msg & "\L" & stacktrace)
+        resp = arg.nawak.custom_pages[500](msg & "\L" & stacktrace)
         break
 
+type ThrArgs = tuple
+    init: proc()
+    from_addr, to_addr: string
+    nawak: TNawak
 
-proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.} =
+proc run_thread*(arg: ThrArgs) {.thread.} =
     var my_uuid: Tuuid
     uuid_generate_random(my_uuid)
     let sender_uuid = my_uuid.to_hex
@@ -99,8 +101,8 @@ proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.
 
     var from_mongrel = connect(arg.from_addr, PULL, context)
     var to_mongrel = connect(arg.to_addr, PUB, context)
-    discard setsockopt(to_mongrel.s, ZMQ_IDENTITY, cstring(sender_uuid),
-                       uint(sender_uuid.len))
+    discard setsockopt(to_mongrel.s, IDENTITY, cstring(sender_uuid),
+                       sender_uuid.len)
 
     arg.init()
 
@@ -110,7 +112,7 @@ proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.
         try:
             msg = receive(from_mongrel)
         except EZmq:
-            linger(to_mongrel.s)
+            set_linger(to_mongrel.s)
             break
 
         var req = parse(msg)
@@ -128,12 +130,12 @@ proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.
 
         of "GET":
             let request = prepare_request_obj(req)
-            for it in nawak.gets:
+            for it in arg.nawak.gets:
                 try_match()
 
         of "POST":
             let request = prepare_request_obj(req)
-            for it in nawak.posts:
+            for it in arg.nawak.posts:
                 try_match()
 
         else:
@@ -141,7 +143,7 @@ proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.
             to_mongrel.send(req.uuid, req.id, "")  # disconnect
 
         if not has_matched:
-            resp = nawak.custom_pages[404]("""
+            resp = arg.nawak.custom_pages[404]("""
             <i>&quot;And they took the road less traveled.
             Unfortunately, there was nothing there.&quot;</i>
             """)
@@ -149,22 +151,22 @@ proc run_thread*(arg: tuple[init: proc(); from_addr, to_addr: string]) {.thread.
         if resp.headers == nil:
             resp.headers = {:}.newStringTable
         if resp.body == nil or resp.code == 0:
-            resp = nawak.custom_pages[500]("""
+            resp = arg.nawak.custom_pages[500]("""
             The programmer forgot to add a status code or to return some data
             in the body of the response.""")
 
         if interrupted:
-            linger(to_mongrel.s)
+            set_linger(to_mongrel.s)
 
         try:
             to_mongrel.send(req.uuid, req.id, http_response(
                 resp.body, resp.code, "OK", resp.headers
             ))
         except EZmq:
-            linger(to_mongrel.s)
+            set_linger(to_mongrel.s)
             break
 
-    var thread_id = cast[int](myThreadId[type(arg)]())
+    #var thread_id = cast[int](myThreadId[type(arg)]())
     #echo "Quit thread $#" % $thread_id
 
     let status_from = close(from_mongrel.s)
@@ -183,12 +185,11 @@ proc run*(init: proc(), from_addr="tcp://localhost:9999", to_addr="tcp://localho
     #    spawn run_thread(from_addr, to_addr)
     #system.sync()
 
-    var thr: seq[TThread[tuple[init: proc();
-                               from_addr, to_addr: string]]]
+    var thr: seq[TThread[ThrArgs]]
     thr.newSeq(nb_threads)
 
-    for i in 0 .. nb_threads:
-        createThread(thr[i], run_thread, (init, from_addr, to_addr))
+    for i in 0 .. <nb_threads:
+        createThread(thr[i], run_thread, (init, from_addr, to_addr, nawak))
     echo "Started with $# threads" % $nb_threads
 
     joinThreads(thr)

@@ -12,9 +12,9 @@ import tuple_index_setter
 
 type
     THttpCode* = int
-    TRequest* = tuple[path: string, query: PStringTable, cookies: PStringTable]
+    TRequest* = tuple[path: string, query: StringTableRef, cookies: StringTableRef]
     TResponse* = tuple[code: THttpCode,
-                      headers: PStringTable,
+                      headers: StringTableRef,
                       body: string]
     TMatcher = proc(s: string, request: TRequest):
         tuple[matched: bool, response: TResponse]
@@ -22,24 +22,30 @@ type
     TSpecialPageCallback* = proc(msg: string): TResponse
     THttpMethod = enum
         TGET = "GET", TPOST = "POST"
-    TNawak = tuple[gets: seq[tuple[match: TMatcher, path: string]],
+    TNawak* = tuple[gets: seq[tuple[match: TMatcher, path: string]],
                    posts: seq[tuple[match: TMatcher, path: string]],
-                   custom_pages: TTable[int, TSpecialPageCallback] ]
+                   custom_pages: Table[int, TSpecialPageCallback] ]
 
-var nawak*: TNawak
-nawak.gets = @[]
-nawak.posts = @[]
+var nawak* {.global.} : TNawak
 
-nawak.custom_pages = initTable[int, TSpecialPageCallback]()
-nawak.custom_pages[404] = proc(msg: string): TResponse =
+proc default_404_handler(msg: string): TResponse =
     return (404, {:}.newStringTable,
             "The server says: <b>404 not found.</b><br><br>" & msg)
 
-nawak.custom_pages[500] = proc(msg: string): TResponse =
+proc default_500_handler(msg: string): TResponse =
     echo msg
     let msg_html = msg.replace("\n", "<br>\L")
     return (500, {:}.newStringTable,
             "The server says: <b>500 internal error.</b><br><br>" & msg_html)
+
+proc init_nawak(nawak: ptr TNawak) =
+    nawak.gets = @[]
+    nawak.posts = @[]
+    nawak.custom_pages = initTable[int, TSpecialPageCallback]()
+    nawak.custom_pages[404] = default_404_handler
+    nawak.custom_pages[500] = default_500_handler
+
+init_nawak(addr nawak)
 
 proc register_custom_page(code: THttpCode, callback: TSpecialPageCallback) =
     nawak.custom_pages[code] = callback
@@ -62,10 +68,10 @@ proc response*(body: string, content_type: string): TResponse =
 proc response*(code: THttpCode, body: string): TResponse =
     return (code, nil, body)
 
-proc response*(code: THttpCode, body: string, headers: PStringTable): TResponse =
+proc response*(code: THttpCode, body: string, headers: StringTableRef): TResponse =
     return (code, headers, body)
 
-proc response*(body: string, headers: PStringTable): TResponse =
+proc response*(body: string, headers: StringTableRef): TResponse =
     return (200, headers, body)
 
 proc redirect*(path: string, code = 303): TResponse =
@@ -75,8 +81,7 @@ proc redirect*(path: string, code = 303): TResponse =
     result.headers["Location"] = path
     result.body = "Redirecting to <a href=\"$1\">$1</a>." % [path]
 
-proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
-              path: string) =
+proc register(http_method: THttpMethod, matcher: TMatcher, path: string) =
     case http_method
     of TGET:
         nawak.gets.add((matcher, path))
@@ -86,8 +91,10 @@ proc register(http_method: THttpMethod, matcher: TMatcher, callback: TCallback,
     # debug purposes:
     echo "registered: ", http_method, " ", path
 
-template inject_matcher(path: string) {.dirty.} =  # if not dirty,
-                                                   # macros inside don't compile
+template inject_matcher(path: string, pattern: TPattern,
+                        callback: proc(r: TRequest):TResponse,
+                        url_params: tuple) {.dirty, immediate.} =
+    # (if not dirty, macros inside don't compile)
     ## injects the proc ``match`` in the current scope.
     ## The variables ``pattern``, ``callback`` and ``url_params`` are closed over,
     ## and are supposed to be declared before this template is called.
@@ -108,6 +115,7 @@ template inject_matcher(path: string) {.dirty.} =  # if not dirty,
               inc(i, node.text.len) # Skip over this optional character.
             else:
               # If it's not there, we have nothing to do. It's optional after all.
+              discard
           else:
             if check(node, s, i):
               inc(i, node.text.len) # Skip over this
@@ -151,12 +159,19 @@ template inject_matcher(path: string) {.dirty.} =  # if not dirty,
 macro inject_urlparams_tuple*(path: string): stmt =
     ## for a path like "/show/@user/@id/?"
     ## it will injects the following lines in the current scope:
-    ##      var url_params = tuple[user: string, id: string]
+    ##      var url_params {.threadvar.}: tuple[user: string, id: string]
     var path_str = $toStrLit(path)
+    # remove the quotes at the beginning and end
     path_str = path_str[1 .. path_str.len - 2]
 
     var pattern = parsePattern(path_str)
     var fields_total = 0
+
+    var pragmaexpr = newNimNode(nnkPragmaExpr)
+    var pragma = newNimNode(nnkPragma)
+    pragma.add(newIdentNode("threadvar"))
+    pragmaexpr.add(newIdentNode("url_params"))
+    pragmaexpr.add(pragma)
 
     var tuple_ty = newNimNode(nnkTupleTy)
     for i, node in pattern:
@@ -178,29 +193,29 @@ macro inject_urlparams_tuple*(path: string): stmt =
 
     result = newNimNode(nnkVarSection)
     result.add(newIdentDefs(
-        newIdentNode("url_params"),
+        pragmaexpr,
         tuple_ty
     ))
 
     # debug the constructed macro:
     #echo toStrLit(result)
+    #echo result.treeRepr
 
 
 template register_route(http_method: THttpMethod, path: string,
                         body: stmt): stmt {.immediate, dirty.} =
-    bind parsePattern, TRequest, TResponse, inject_matcher, register
+    bind parsePattern, TRequest, TResponse, inject_matcher,
+         inject_urlparams_tuple, register
     block:
-        var pattern = parsePattern(path)
+        let pattern = parsePattern(path)
         inject_urlparams_tuple(path)
 
-        proc callback(request: TRequest): TResponse {.closure.} =
+        proc callback(request: TRequest): TResponse =
             body
 
-        inject_matcher(path)
-        register(http_method, match, callback, path)
-        ## passing ``callback`` to register is necessary for closure detection
-        ## by the compiler, even if inject_matcher injects a match that will
-        ## start callback anyway because it can access it thanks to the closure
+        inject_matcher(path, pattern, callback, url_params)
+        register(http_method, match, path)
+
 
 template get*(path: string, body: stmt): stmt {.immediate, dirty.} =
     bind register_route, TGET
